@@ -1,245 +1,241 @@
-from time import sleep, ticks_ms, ticks_diff
-# from typing import Iterable, Tuple, Union
+import time
+from machine import Pin
+from neopixel import NeoPixel
+from random import randint, choice
+from time import sleep_ms
+from umatrix import matrix
+from math import cos, sin, pi
 
-from machine import Pin  # type: ignore
-import RandomNetwork
 
-INDICES = []
-for x in range(3):
-    for y in range(3):
-        for z in range(3):
-            INDICES.append((x, y, z))
+n = 27
+
+
+def demo(np, r, b, g):
+    n = np.n
+    np.fill((0, 0, 0))
+    np.write()
+    time.sleep_ms(1000)
+
+    for i in range(n):
+        np[i] = (r, b, g)
+        np.write()
+        time.sleep_ms(100)
+
+
+def run(t):
+    np = NeoPixel(Pin(13), n, timing=t)
+    demo(np, 255, 0, 0)
+    demo(np, 0, 255, 0)
+    demo(np, 0, 0, 255)
+    demo(np, 255, 255, 255)
+    np.fill((0, 0, 0))
+    np.write()
+
+
+def to_homogeneous(point):
+    # takes a 3-tuple and returns a related homogeneous vector
+    x, y, z = point
+    return matrix([x, y, z, 1], are_rows=False)
+
+
+def from_homogeneous(vector):
+    # takes a homogenous vector and returns a 3-tuple
+    x = vector[0][0]
+    y = vector[1][0]
+    z = vector[2][0]
+    return (x, y, z)
 
 
 class Cube:
-    def __init__(self):
-        self._slice = [
-            {'red': Pin(15, Pin.OUT), 'green': Pin(
-                2, Pin.OUT), 'blue': Pin(4, Pin.OUT)},
-            {'red': Pin(16, Pin.OUT), 'green': Pin(
-                17, Pin.OUT), 'blue': Pin(5, Pin.OUT)},
-            {'red': Pin(18, Pin.OUT), 'green': Pin(
-                19, Pin.OUT), 'blue': Pin(21, Pin.OUT)},
-        ]
+    def __init__(self, n=27, pin=13):
+        # n leds
+        self._n = n
+        # control pin on the microcontroller
+        self._pin = pin
 
-        self._point = [
-            Pin(13, Pin.OUT),
-            Pin(12, Pin.OUT),
-            Pin(14, Pin.OUT),
-            Pin(27, Pin.OUT),
-            Pin(26, Pin.OUT),
-            Pin(25, Pin.OUT),
-            Pin(33, Pin.OUT),
-            Pin(32, Pin.OUT),
-            Pin(22, Pin.OUT),
-        ]
-        # map (x, z) to the point indice
-        # (0, 0) (1, 0) (2, 0)          6 7 8
-        # (0, 0) (1, 0) (2, 0)    ->    2 4 5
-        # (0, 0) (1, 0) (2, 0)          0 1 2
+        self._np = NeoPixel(Pin(self._pin), self._n)
+
+        # (x, y, z) -> i, where i is the linear index
         self._mapping = {
-            (0, 0): 0,
-            (1, 0): 1,
-            (2, 0): 2,
-            (0, 1): 3,
-            (1, 1): 4,
-            (2, 1): 5,
-            (0, 2): 6,
-            (1, 2): 7,
-            (2, 2): 8,
+            (0, 0, 0): 0,
+            (1, 0, 0): 1,
+            (2, 0, 0): 2,
+            (2, 0, 1): 3,
+            (1, 0, 1): 4,
+            (0, 0, 1): 5,
+            (0, 0, 2): 6,
+            (1, 0, 2): 7,
+            (2, 0, 2): 8,
+            (0, 1, 0): 9,
+            (1, 1, 0): 10,
+            (2, 1, 0): 11,
+            (2, 1, 1): 12,
+            (1, 1, 1): 13,
+            (0, 1, 1): 14,
+            (0, 1, 2): 15,
+            (1, 1, 2): 16,
+            (2, 1, 2): 17,
+            (0, 2, 0): 18,
+            (1, 2, 0): 19,
+            (2, 2, 0): 20,
+            (2, 2, 1): 21,
+            (1, 2, 1): 22,
+            (0, 2, 1): 23,
+            (0, 2, 2): 24,
+            (1, 2, 2): 25,
+            (2, 2, 2): 26
         }
-        self._active_points = set()
 
-    def _activate(self, x: int, y: int, z: int, color: str) -> None:
-        """This method physically activates the led. """
-        assert color in {'red', 'green', 'blue'}
-        assert x in range(3)
-        assert y in range(3)
-        assert z in range(3)
-        active_point = (x, y, z, color)
-        self._active_points.add(active_point)
-
-        self._slice[y][color].on()
-        i = self._mapping[(x, z)]
-        self._point[i].on()
-
-    def off(self) -> None:
-        if len(self._active_points) == 0:
-            return
-        for x, y, z, color in self._active_points:
-            # x, y, z, color = self._active_point
-            self._slice[y][color].off()
-            i = self._mapping[(x, z)]
-            self._point[i].off()
-        self._active_points.clear()
-
-        # # loop over the points and turn them off
-        # for pin in self._point:
-        #     pin.off()
-        # # loop over the _slices and turn off each color
-        # for slc in self._slice:
-        #     for color in slc:
-        #         slc[color].off()
-
-    def on(self, x, y, z, color, delay) -> None:
-        self._activate(x, y, z, color)
-        sleep(delay)
-        self.off()
-
-    # def group_on(self, obj, duration, time_slice=200) -> None:
-    #     # obj must be an iterable containing (x: int, y: int, z: int, color: str) tuples
-    #     time_slice = 1 / time_slice  # duration of time each led is on
-    #     epsilon = time_slice * 5  # time precision
-    #     delta = 0  # sum of the time slices experienced thus far
-
-    #     start_time = ticks_ms()
-    #     while True:
-    #         for x, y, z, color in obj:
-    #             self.on(x, y, z, color, time_slice)
-    #             cur_time = ticks_ms()
-    #             distance = ticks_diff(cur_time, start_time)
-    #             print(distance)
-    #             if distance > (1000 * duration):
-    #                 return
-    def group_on(self, group, duration, window=19):
-        duration = duration * 1000
-        l = len(group)
-        time_slice = window / l
-        for _ in range(duration / window):
-            for x, y, z, c in group:
-                self.on(x, y, z, c, time_slice * (1/1000))
-
-    def _group_demo(self, window=25):
-        group = [
-            (0, 0, 2, 'red'),
-            (0, 1, 2, 'red'),
-            (0, 2, 2, 'red'),
-            (1, 0, 2, 'green'),
-            (1, 1, 2, 'green'),
-            (1, 2, 2, 'green'),
-            (2, 0, 2, 'blue'),
-            (2, 1, 2, 'blue'),
-            (2, 2, 2, 'blue'),
-        ]
-        duration = 3 * 1000
-        l = len(group)
-        time_slice = window / l
-        for _ in range(duration / window):
-            for x, y, z, c in group:
-                self.on(x, y, z, c, time_slice * (1/1000))
-
-    def clear(self) -> None:
-        """Synonymous function. """
-        self.off()
-
-    def test(self, delay: float = 0.5) -> None:
-        """Iterate through the point list and toggle each color. """
-        for x in range(3):
-            for y in range(3):
-                for z in range(3):
-                    for c in ['red', 'green', 'blue']:
-                        self.on(x, y, z, c, delay)
-
-        # for p in self._point:
-        #     for slc in self._slice:
-        #         for color in slc:
-        #             p.on()
-        #             slc[color].on()
-        #             sleep(delay)
-        #             self.clear()
-    def demo(self):
-        group1 = [
-            (0, 0, 0), (1, 0, 0), (2, 0, 0),
-            (0, 1, 0), (1, 1, 0), (2, 1, 0),
-            (0, 2, 0), (1, 2, 0), (2, 2, 0),
-        ]
-        group1 = [(x, y, z, 'red') for x, y, z in group1]
-        group2 = []
-        group3 = []
+        # maintain a color state for each point in the cube
+        # this acts as the preimage for transforms of the cube, i.e. rotations, translations, etc
+        self._state = dict()
         for i in range(3):
-            self.group_on(group1, 1)
-            group1 = [(x, y, z + 1, c) for (x, y, z, c) in group1]
-        self.group_on(group1, 1)
-        for i in range(3):
-            self.group_on(group1, 1)
-            group1 = [(x, y, z - 1, c) for (x, y, z, c) in group1]
-        self.group_on(group1, 1)
+            for j in range(3):
+                for k in range(3):
+                    self._state[(i, j, k)] = (0, 0, 0)
 
-    def random_network_animation(self, delay=0.1):
-        COLORS = ['off', 'red', 'green', 'blue']
-        self.network = RandomNetwork.RandomNetwork(27, 4, 3)
+    def update(self):
+        # realizes self._state on to the cube
+        for point in self._state:
+            color = self._state[point]
+            self._np[self._mapping[point]] = color
+
+        self._np.write()
+
+    def fill(self, color):
+        g, r, b = color
+        self._np.fill((g, r, b))
+        self._np.write()
+
+    def clear(self):
+        # short hand to fill with (0, 0, 0)
+        self.fill((0, 0, 0))
+
+    def set(self, pos, col):
+        # pos is a 3 tuple
+        # col is an grb tuple
+        self._state[pos] = col
+
+    def _map_update(self, A):
+        # compute a new self._state by matrix multiplying each position by A
+        new_state = {}
+
+        for point in self._state:
+            color = self._state[point]
+            point_new = A * to_homogeneous(point)
+            new_state[from_homogeneous(point_new)] = color
+
+        self._state = new_state
+
+    def rotate_z(self):
+        # rotate about the central z axis pi/2 counterclockwise
+        theta = pi/2
+        T = matrix([1, 0, 0, -1],
+                   [0, 1, 0, -1],
+                   [0, 0, 1, 0],
+                   [0, 0, 0, 1])
+        Tinv = matrix([1, 0, 0, 1],
+                      [0, 1, 0, 1],
+                      [0, 0, 1, 0],
+                      [0, 0, 0, 1])
+        M = matrix([round(cos(theta)), round(-sin(theta)), 0, 0],
+                   [round(sin(theta)), round(cos(theta)), 0, 0],
+                   [0, 0, 1, 0],
+                   [0, 0, 0, 1])
+
+        # transformation matrix
+        A = Tinv * M * T
+        self._map_update(A)
+
+    def rotate_x(self):
+        # rotate about the central x axis pi/2 counterclockwise
+        theta = pi/2
+        T = matrix([1, 0, 0, 0],
+                   [0, 1, 0, -1],
+                   [0, 0, 1, -1],
+                   [0, 0, 0, 1])
+        Tinv = matrix([1, 0, 0, 0],
+                      [0, 1, 0, 1],
+                      [0, 0, 1, 1],
+                      [0, 0, 0, 1])
+        M = matrix([1, 0, 0, 0],
+                   [0, round(cos(theta)), round(-sin(theta)), 0],
+                   [0, round(sin(theta)), round(cos(theta)), 0],
+                   [0, 0, 0, 1])
+
+        # transformation matrix
+        A = Tinv * M * T
+        self._map_update(A)
+
+    def rotate_y(self):
+        # rotate about the central y axis pi/2 counterclockwise
+        theta = pi/2
+        T = matrix([1, 0, 0, -1],
+                   [0, 1, 0, 0],
+                   [0, 0, 1, -1],
+                   [0, 0, 0, 1])
+        Tinv = matrix([1, 0, 0, 1],
+                      [0, 1, 0, 0],
+                      [0, 0, 1, 1],
+                      [0, 0, 0, 1])
+        M = matrix([round(cos(theta)), 0, round(-sin(theta)), 0],
+                   [0, 1, 0, 0],
+                   [round(sin(theta)), 0, round(cos(theta)), 0],
+                   [0, 0, 0, 1])
+
+        # transformation matrix
+        A = Tinv * M * T
+        self._map_update(A)
+
+    def cross(self):
+        self.set((1, 1, 0), (10, 0, 0))
+        self.set((1, 1, 2), (10, 0, 0))
+
+        self.set((1, 0, 1), (0, 10, 0))
+        self.set((1, 2, 1), (0, 10, 0))
+
+        self.set((0, 1, 1), (0, 0, 10))
+        self.set((2, 1, 1), (0, 0, 10))
+
+        self.set((1, 1, 1), (10, 10, 10))
+
+        self.update()
+
+    def random_demo(self):
+        colors = [(10, 0, 0), (0, 10, 0), (0, 0, 10),
+                  (10, 10, 0), (10, 0, 10), (0, 10, 10)]
+        on = []
         while True:
-            group = []
-            for i, (x, y, z) in enumerate(INDICES):
-                c = self.network.v[i]
-                if c != 0:
-                    group.append((x, y, z, COLORS[c]))
-            self.group_on(group, delay)
-            network.update()
+            for _ in range(5):
+                point = choice(list(self._mapping.keys()))
+                color = choice(colors)
+                on.append((point, color))
 
+            for p, c in on:
+                self.set(p, c)
 
-cube = Cube()
-colors = ['red', 'green', 'blue']
-group = []
-# for x in range(3):
-#     for y in range(3):
-#         for z in range(3):
-#             group.append((x, y, z, colors[x]))
-group1 = [
-    (0, 0, 0, 'red'),
-    (0, 1, 0, 'red'),
-    (0, 2, 0, 'red'),
-    (1, 0, 0, 'red'),
-    (1, 1, 0, 'red'),
-    (1, 2, 0, 'red'),
-    (2, 0, 0, 'red'),
-    (2, 1, 0, 'red'),
-    (2, 2, 0, 'red'),
-]
+            self.write()
+            sleep_ms(200)
+            self.clear()
+            on.clear()
 
-group2 = [
-    (0, 0, 0, 'green'),
-    (0, 1, 0, 'green'),
-    (0, 2, 0, 'green'),
-    (0, 0, 1, 'green'),
-    (0, 1, 1, 'green'),
-    (0, 2, 1, 'green'),
-    (0, 0, 2, 'green'),
-    (0, 1, 2, 'green'),
-    (0, 2, 2, 'green'),
-]
-group3 = [
-    (0, 0, 0, 'blue'),
-    (1, 0, 0, 'blue'),
-    (2, 0, 0, 'blue'),
-    (0, 0, 1, 'blue'),
-    (1, 0, 1, 'blue'),
-    (2, 0, 1, 'blue'),
-    (0, 0, 2, 'blue'),
-    (1, 0, 2, 'blue'),
-    (2, 0, 2, 'blue'),
-]
+    def random_rotations(self):
+        colors = [(10, 0, 0), (0, 10, 0), (0, 0, 10),
+                  (10, 10, 0), (10, 0, 10), (0, 10, 10)]
 
+        rotations = [self.rotate_x, self.rotate_y, self.rotate_z]
+        # turn on 5 random points
+        for _ in range(5):
+            point = choice(list(self._mapping.keys()))
+            color = choice(colors)
+            self.set(point, color)
 
-def f():
-    def g(group, i, j, k):
-        t = 1
-        cube.group_on(group, t)
-        for _ in range(2):
-            group = [(x + i, y + j, z + k, c) for (x, y, z, c) in group]
-            cube.group_on(group, t)
-        cube.group_on(group, t)
-        for _ in range(2):
-            group = [(x - i, y - j, z - k, c) for (x, y, z, c) in group]
-            cube.group_on(group, t)
+        self.update()
+        sleep_ms(1000)
 
-    g(group1, 0, 0, 1)
-    # cube.group_on(group1, 1)
-    # for i in range(3):
-    #     group = [x, y, z + 1, c for x, y, z, c in group1]
-    #     cube.group_on(group)
-
-    # cube.group_on(group2, 1)
-    # cube.group_on(group3, 1)
-    # for i in range(3):
-    #     group = [x, y, z, c for x, y, z, c in group1]
+        while True:
+            r = choice(rotations)
+            r()
+            self.update()
+            t = choice(range(3000))
+            sleep_ms(t)
