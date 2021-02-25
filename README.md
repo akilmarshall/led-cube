@@ -9,6 +9,9 @@ big thanks to iyassou's [matrix multiplication library](https://github.com/iyass
 
 ## Build Instructions
 
+The forms can be 3D printed on an FFF printer at 0.3mm or finer layer height, no infill required.
+The vertical form may cause quite a lot of stringing.
+
 First use the horizontal form and solder together "sticks" of leds connecting the ground and power pins forming rails.
 Then chain the din and dout pins of each led in the stick linearly connecting them.
 For a 3x3x3 led cube one will assemble 9 led sticks.
